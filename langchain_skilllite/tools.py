@@ -29,6 +29,9 @@ from skilllite import SkillManager, SkillInfo
 if TYPE_CHECKING:
     from pathlib import Path
 
+
+
+
 # Type aliases for confirmation callbacks
 ConfirmationCallback = Callable[[str, str], bool]
 AsyncConfirmationCallback = Callable[[str, str], "asyncio.Future[bool]"]
@@ -280,6 +283,11 @@ class SkillLiteTool(BaseTool):
         skip_skillbox_confirmation = False
         old_sandbox_level = None
 
+        # Handle LangChain's default behavior when args_schema is None
+        # LangChain may wrap arguments in {'kwargs': {...}} format
+        if len(kwargs) == 1 and 'kwargs' in kwargs and isinstance(kwargs['kwargs'], dict):
+            kwargs = kwargs['kwargs']
+
         try:
             # Security scan for sandbox level 3
             if self.sandbox_level >= 3:
@@ -350,6 +358,11 @@ class SkillLiteTool(BaseTool):
         """Execute the skill asynchronously. Delegates to skilllite core."""
         skip_skillbox_confirmation = False
         old_sandbox_level = None
+
+        # Handle LangChain's default behavior when args_schema is None
+        # LangChain may wrap arguments in {'kwargs': {...}} format
+        if len(kwargs) == 1 and 'kwargs' in kwargs and isinstance(kwargs['kwargs'], dict):
+            kwargs = kwargs['kwargs']
 
         try:
             if self.sandbox_level >= 3:
@@ -486,10 +499,18 @@ class SkillLiteToolkit:
             if skill_names and skill.name not in skill_names:
                 continue
 
+            # Follow Agent Skills spec: put full SKILL.md content in description
+            # Let LLM infer parameters from the complete skill documentation
+            description = skill.description or f"Execute the {skill.name} skill"
+            if hasattr(skill, 'get_full_content'):
+                full_content = skill.get_full_content()
+                if full_content:
+                    description = full_content
+
             # Create tool with security confirmation support
             tool = SkillLiteTool(
                 name=skill.name,
-                description=skill.description or f"Execute the {skill.name} skill",
+                description=description,
                 manager=manager,
                 skill_name=skill.name,
                 allow_network=allow_network,
