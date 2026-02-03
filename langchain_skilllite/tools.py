@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import os
 import time
 import uuid
@@ -322,7 +323,14 @@ class SkillLiteTool(BaseTool):
                 timeout=self.timeout
             )
             if result.success:
-                return result.output or "Execution completed successfully"
+                output = result.output
+                if output is None:
+                    return "Execution completed successfully"
+                elif isinstance(output, str):
+                    return output
+                else:
+                    # Convert dict to JSON string for LangChain
+                    return json.dumps(output, ensure_ascii=False)
             else:
                 return f"Error: {result.error}"
         except Exception as e:
@@ -387,7 +395,14 @@ class SkillLiteTool(BaseTool):
                 self.timeout
             )
             if result.success:
-                return result.output or "Execution completed successfully"
+                output = result.output
+                if output is None:
+                    return "Execution completed successfully"
+                elif isinstance(output, str):
+                    return output
+                else:
+                    # Convert dict to JSON string for LangChain
+                    return json.dumps(output, ensure_ascii=False)
             else:
                 return f"Error: {result.error}"
         except Exception as e:
