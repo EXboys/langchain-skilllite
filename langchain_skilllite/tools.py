@@ -122,6 +122,10 @@ class SkillLiteTool(BaseTool):
 
     # Security confirmation fields
     sandbox_level: int = Field(default=3, description="Sandbox security level (1/2/3)")
+    force_confirmation: bool = Field(
+        default=False,
+        description="Force confirmation even if no security issues found"
+    )
     confirmation_callback: Optional[Any] = Field(
         default=None,
         exclude=True,
@@ -297,7 +301,9 @@ class SkillLiteTool(BaseTool):
                 else:
                     scan_result = self._perform_security_scan(kwargs)
 
-                    if scan_result.requires_confirmation:
+                    # Trigger confirmation if issues found OR force_confirmation is set
+                    needs_confirmation = scan_result.requires_confirmation or self.force_confirmation
+                    if needs_confirmation:
                         if self.confirmation_callback:
                             report = scan_result.format_report()
                             confirmed = self.confirmation_callback(report, scan_result.scan_id)
@@ -372,7 +378,9 @@ class SkillLiteTool(BaseTool):
                 else:
                     scan_result = await asyncio.to_thread(self._perform_security_scan, kwargs)
 
-                    if scan_result.requires_confirmation:
+                    # Trigger confirmation if issues found OR force_confirmation is set
+                    needs_confirmation = scan_result.requires_confirmation or self.force_confirmation
+                    if needs_confirmation:
                         if self.async_confirmation_callback:
                             report = scan_result.format_report()
                             confirmed = await self.async_confirmation_callback(report, scan_result.scan_id)
@@ -466,6 +474,7 @@ class SkillLiteToolkit:
         allow_network: bool = False,
         timeout: Optional[int] = None,
         sandbox_level: int = 3,
+        force_confirmation: bool = False,
         confirmation_callback: Optional[ConfirmationCallback] = None,
         async_confirmation_callback: Optional[AsyncConfirmationCallback] = None,
     ) -> List[SkillLiteTool]:
@@ -481,6 +490,7 @@ class SkillLiteToolkit:
                 - Level 1: No sandbox - direct execution
                 - Level 2: Sandbox isolation only
                 - Level 3: Sandbox + security scanning (requires confirmation)
+            force_confirmation: Force confirmation even if no security issues found
             confirmation_callback: Sync callback for security confirmation.
                 Signature: (security_report: str, scan_id: str) -> bool
             async_confirmation_callback: Async callback for security confirmation.
@@ -516,6 +526,7 @@ class SkillLiteToolkit:
                 allow_network=allow_network,
                 timeout=timeout,
                 sandbox_level=sandbox_level,
+                force_confirmation=force_confirmation,
                 confirmation_callback=confirmation_callback,
                 async_confirmation_callback=async_confirmation_callback,
             )
@@ -530,6 +541,7 @@ class SkillLiteToolkit:
         allow_network: bool = False,
         timeout: Optional[int] = None,
         sandbox_level: int = 3,
+        force_confirmation: bool = False,
         confirmation_callback: Optional[ConfirmationCallback] = None,
         async_confirmation_callback: Optional[AsyncConfirmationCallback] = None,
     ) -> List[SkillLiteTool]:
@@ -544,6 +556,7 @@ class SkillLiteToolkit:
             allow_network: Whether to allow network access
             timeout: Execution timeout in seconds
             sandbox_level: Sandbox security level (1/2/3)
+            force_confirmation: Force confirmation even if no security issues found
             confirmation_callback: Sync callback for security confirmation
             async_confirmation_callback: Async callback for security confirmation
 
@@ -557,6 +570,7 @@ class SkillLiteToolkit:
             allow_network=allow_network,
             timeout=timeout,
             sandbox_level=sandbox_level,
+            force_confirmation=force_confirmation,
             confirmation_callback=confirmation_callback,
             async_confirmation_callback=async_confirmation_callback,
         )
