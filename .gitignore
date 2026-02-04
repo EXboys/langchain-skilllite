@@ -21,6 +21,7 @@ sdist/
 var/
 wheels/
 *.egg-info/
+langchain_skilllite.egg-info/
 .installed.cfg
 *.egg
 
