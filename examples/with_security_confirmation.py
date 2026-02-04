@@ -1,12 +1,11 @@
 """
 Example with security confirmation callback (sandbox level 3).
 
-This example demonstrates the FULL LangChain agent workflow with security scanning:
-1. Load skills as LangChain tools with sandbox_level=3
-2. Create a LangGraph agent with LLM
-3. User asks to use a skill that contains potentially dangerous code
-4. Security scan detects the issue and prompts for confirmation
-5. User confirms or denies execution
+This example demonstrates the security scanning workflow:
+1. Create a skill with potentially dangerous code (os.popen)
+2. Load skills with sandbox_level=3 (security scanning enabled)
+3. Security scan detects the issue and prompts for confirmation
+4. User confirms or denies execution
 
 Usage:
     # Set your API key first
@@ -19,6 +18,9 @@ Usage:
 """
 
 import os
+import tempfile
+from pathlib import Path
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -26,6 +28,51 @@ load_dotenv()
 from langchain_skilllite import SkillLiteToolkit, SkillLiteCallbackHandler
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
+
+
+def create_dangerous_skill(tmpdir: str) -> str:
+    """Create a skill with potentially dangerous code for security testing."""
+    skill_dir = Path(tmpdir) / "file-reader"
+    skill_dir.mkdir()
+    scripts_dir = skill_dir / "scripts"
+    scripts_dir.mkdir()
+
+    # Create SKILL.md
+    (skill_dir / "SKILL.md").write_text("""---
+name: file-reader
+description: A file reader skill that reads file contents. WARNING - contains os.popen for testing security scanning.
+license: MIT
+metadata:
+  author: example
+  version: "1.0"
+---
+
+# File Reader Skill
+
+Reads the contents of a file. This skill intentionally uses os.popen()
+to demonstrate security scanning capabilities.
+""")
+
+    # Create main.py with dangerous code (os.popen)
+    (scripts_dir / "main.py").write_text('''import sys
+import json
+import os
+
+def main(filepath: str) -> str:
+    """Read file contents using os.popen (dangerous!)."""
+    try:
+        # This is intentionally dangerous to trigger security scan
+        result = os.popen(f"cat {filepath}").read()
+        return f"File contents:\\n{result}"
+    except Exception as e:
+        return f"Error: {e}"
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1:
+        params = json.loads(sys.argv[1])
+        print(main(params.get("filepath", "")))
+''')
+    return tmpdir
 
 
 def confirmation_callback(security_report: str, scan_id: str) -> bool:
@@ -49,79 +96,76 @@ def confirmation_callback(security_report: str, scan_id: str) -> bool:
     print("=" * 60)
 
     response = input("\nProceed with execution? [y/N]: ").strip().lower()
-    return response == 'y'
+    return response == "y"
 
 
 def main():
-    skills_dir = os.path.join(os.path.dirname(__file__), "../../.skills")
-
-    if not os.path.exists(skills_dir):
-        print(f"Skills directory not found: {skills_dir}")
-        return
-
-    print("=" * 60)
-    print("🔐 Security Confirmation Test (Full LLM Agent)")
-    print("=" * 60)
-
-    # Load skills with sandbox level 3 (security scanning + confirmation)
-    print("\n📂 Loading skills with security scanning enabled...")
-    tools = SkillLiteToolkit.from_directory(
-        skills_dir,
-        sandbox_level=3,  # Full security: sandbox + scanning
-        confirmation_callback=confirmation_callback,
-    )
-
-    print(f"✅ Loaded {len(tools)} tools:")
-    for tool in tools:
-        print(f"   • {tool.name}")
-
-    # Create callback handler for monitoring
-    callback_handler = SkillLiteCallbackHandler(verbose=True)
-
-    # Configure LLM
+    # Check for API key
     api_key = os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY")
     if not api_key:
-        print("\n❌ Error: No API key found!")
+        print("❌ Error: No API key found!")
         print("   Set OPENAI_API_KEY or API_KEY environment variable")
         return
 
-    llm = ChatOpenAI(
-        base_url=os.getenv("BASE_URL", "https://api.openai.com/v1"),
-        api_key=api_key,
-        model=os.getenv("MODEL", "gpt-4"),
-    )
+    with tempfile.TemporaryDirectory() as tmpdir:
+        print("=" * 60)
+        print("🔐 Security Confirmation Example")
+        print("=" * 60)
 
-    # Create agent
-    agent = create_react_agent(llm, tools)
+        # Create skill with dangerous code
+        print("\n📂 Creating test skill with dangerous code (os.popen)...")
+        create_dangerous_skill(tmpdir)
 
-    print("\n" + "-" * 60)
-    print("Testing with file-helper skill...")
-    print("This skill uses os.popen() which should trigger security scan!")
-    print("-" * 60)
+        # Load skills with sandbox level 3 (security scanning + confirmation)
+        print("\n🔍 Loading skills with security scanning enabled...")
+        tools = SkillLiteToolkit.from_directory(
+            tmpdir,
+            sandbox_level=3,  # Full security: sandbox + scanning
+            confirmation_callback=confirmation_callback,
+        )
 
-    # Use file-helper which looks harmless but contains os.popen()
-    # The LLM should be willing to call this tool
-    result = agent.invoke(
-        {"messages": [("user", "请使用 file-helper 工具读取 /etc/hostname 文件的内容")]},
-        config={"callbacks": [callback_handler]}
-    )
+        print(f"\n✅ Loaded {len(tools)} tools:")
+        for tool in tools:
+            print(f"   • {tool.name}")
 
-    print("\n" + "=" * 60)
-    print("Agent Response:")
-    print("=" * 60)
-    for msg in result["messages"]:
-        if hasattr(msg, "content") and msg.content:
-            print(f"  [{msg.type}]: {msg.content[:500]}")
+        # Create callback handler for monitoring
+        callback_handler = SkillLiteCallbackHandler(verbose=True)
 
-    # Print execution summary
-    print("\n" + "-" * 60)
-    summary = callback_handler.get_execution_summary()
-    print(f"📊 Execution Summary:")
-    print(f"   Tool executions: {summary['tool_executions']}")
-    print(f"   Successful: {summary['successful']}")
-    print(f"   Errors: {summary['errors']}")
+        # Configure LLM
+        llm = ChatOpenAI(
+            base_url=os.getenv("BASE_URL", "https://api.openai.com/v1"),
+            api_key=api_key,
+            model=os.getenv("MODEL", "gpt-4"),
+        )
+
+        # Create agent
+        agent = create_react_agent(llm, tools)
+
+        print("\n" + "-" * 60)
+        print("Testing with file-reader skill...")
+        print("This skill uses os.popen() which should trigger security scan!")
+        print("-" * 60)
+
+        result = agent.invoke(
+            {"messages": [("user", "Use the file-reader to read /etc/hostname")]},
+            config={"callbacks": [callback_handler]},
+        )
+
+        print("\n" + "=" * 60)
+        print("📤 Agent Response:")
+        print("=" * 60)
+        for msg in result["messages"]:
+            if hasattr(msg, "content") and msg.content:
+                print(f"   [{msg.type}]: {msg.content[:500]}")
+
+        # Print execution summary
+        print("\n" + "-" * 60)
+        summary = callback_handler.get_execution_summary()
+        print(f"📊 Execution Summary:")
+        print(f"   Tool executions: {summary['tool_executions']}")
+        print(f"   Successful: {summary['successful']}")
+        print(f"   Errors: {summary['errors']}")
 
 
 if __name__ == "__main__":
     main()
-
