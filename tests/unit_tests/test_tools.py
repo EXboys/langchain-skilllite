@@ -18,6 +18,10 @@ class MockSkillInfo:
     name: str
     description: Optional[str] = None
 
+    def get_full_content(self) -> str:
+        """Return mock full content."""
+        return self.description or ""
+
 
 @dataclass
 class MockExecutionResult:
@@ -106,14 +110,22 @@ class TestSkillLiteTool:
         
         assert tool.sandbox_level == 1
 
-    def test_run_success(self):
-        """Test successful skill execution."""
-        mock_manager = MagicMock()
-        mock_manager.execute.return_value = MockExecutionResult(
+    @patch('skilllite.sandbox.execution_service.UnifiedExecutionService.get_instance')
+    def test_run_success(self, mock_get_instance):
+        """Test successful skill execution via UnifiedExecutionService."""
+        # Setup mock execution service
+        mock_service = MagicMock()
+        mock_service.execute_skill.return_value = MockExecutionResult(
             success=True,
             output="Hello, World!"
         )
-        
+        mock_get_instance.return_value = mock_service
+
+        # Setup mock manager with skill registry
+        mock_manager = MagicMock()
+        mock_skill_info = MagicMock()
+        mock_manager._registry.get_skill.return_value = mock_skill_info
+
         tool = SkillLiteTool(
             name="test_skill",
             description="A test skill",
@@ -121,20 +133,28 @@ class TestSkillLiteTool:
             skill_name="test_skill",
             sandbox_level=1,  # No security scan
         )
-        
-        result = tool._run(param1="value1")
-        
-        assert result == "Hello, World!"
-        mock_manager.execute.assert_called_once()
 
-    def test_run_failure(self):
-        """Test failed skill execution."""
-        mock_manager = MagicMock()
-        mock_manager.execute.return_value = MockExecutionResult(
+        result = tool._run(param1="value1")
+
+        assert result == "Hello, World!"
+        mock_service.execute_skill.assert_called_once()
+
+    @patch('skilllite.sandbox.execution_service.UnifiedExecutionService.get_instance')
+    def test_run_failure(self, mock_get_instance):
+        """Test failed skill execution via UnifiedExecutionService."""
+        # Setup mock execution service
+        mock_service = MagicMock()
+        mock_service.execute_skill.return_value = MockExecutionResult(
             success=False,
             error="Skill not found"
         )
-        
+        mock_get_instance.return_value = mock_service
+
+        # Setup mock manager with skill registry
+        mock_manager = MagicMock()
+        mock_skill_info = MagicMock()
+        mock_manager._registry.get_skill.return_value = mock_skill_info
+
         tool = SkillLiteTool(
             name="test_skill",
             description="A test skill",
@@ -142,9 +162,9 @@ class TestSkillLiteTool:
             skill_name="test_skill",
             sandbox_level=1,
         )
-        
+
         result = tool._run()
-        
+
         assert "Error" in result
         assert "Skill not found" in result
 
