@@ -73,3 +73,5 @@ dmypy.json
 
 # Ruff
 .ruff_cache/
+.DS_Store
+tests/unit_tests/__pycache__/test_tools.cpython-313-pytest-9.0.2.pyc
