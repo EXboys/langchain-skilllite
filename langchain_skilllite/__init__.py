@@ -37,6 +37,11 @@ from langchain_skilllite.tools import (
     SkillLiteTool,
     SkillLiteToolkit,
 )
+from langchain_skilllite.core import (
+    SkillManager,
+    SkillInfo,
+    SecurityScanResult,
+)
 from langchain_skilllite.callbacks import (
     SkillLiteCallbackHandler,
 )
@@ -46,6 +51,10 @@ __all__ = [
     # Core Tools
     "SkillLiteTool",
     "SkillLiteToolkit",
+    # Skill Management
+    "SkillManager",
+    "SkillInfo",
+    "SecurityScanResult",
     # Callbacks
     "SkillLiteCallbackHandler",
     # Version

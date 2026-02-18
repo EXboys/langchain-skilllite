@@ -1,34 +1,12 @@
 """Unit tests for SkillLiteTool and SkillLiteToolkit."""
 
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from dataclasses import dataclass
 from typing import Optional
 
-from langchain_skilllite.tools import (
-    SkillLiteTool,
-    SkillLiteToolkit,
-    SecurityScanResult,
-)
-
-
-@dataclass
-class MockSkillInfo:
-    """Mock skill info for testing."""
-    name: str
-    description: Optional[str] = None
-
-    def get_full_content(self) -> str:
-        """Return mock full content."""
-        return self.description or ""
-
-
-@dataclass
-class MockExecutionResult:
-    """Mock execution result."""
-    success: bool
-    output: Optional[str] = None
-    error: Optional[str] = None
+from langchain_skilllite.tools import SkillLiteTool, SkillLiteToolkit
+from langchain_skilllite.core import SecurityScanResult, SkillManager, SkillInfo
 
 
 class TestSecurityScanResult:
@@ -45,6 +23,7 @@ class TestSecurityScanResult:
         result = SecurityScanResult(
             is_safe=False,
             issues=[{"severity": "High", "description": "test"}],
+            requires_confirmation=True,
             high_severity_count=1,
         )
         assert result.requires_confirmation is True
@@ -69,96 +48,106 @@ class TestSecurityScanResult:
                     "code_snippet": "os.system('rm -rf /')",
                 }
             ],
+            requires_confirmation=True,
             scan_id="test-456",
             high_severity_count=1,
         )
         report = result.format_report()
         assert "High" in report
-        assert "DangerousCode" in report
+        assert "Dangerous operation" in report
         assert "Confirmation required" in report
 
 
 class TestSkillLiteTool:
     """Tests for SkillLiteTool class."""
 
-    def test_tool_creation(self):
+    def test_tool_creation(self, tmp_path):
         """Test basic tool creation."""
-        mock_manager = MagicMock()
-        
+        (tmp_path / "test_skill").mkdir()
+        (tmp_path / "test_skill" / "SKILL.md").write_text("---\nname: test_skill\ndescription: A test skill\n---")
+        (tmp_path / "test_skill" / "scripts").mkdir()
+        (tmp_path / "test_skill" / "scripts" / "main.py").write_text("print('ok')")
+        manager = SkillManager(skills_dir=str(tmp_path))
+
         tool = SkillLiteTool(
             name="test_skill",
             description="A test skill",
-            manager=mock_manager,
+            manager=manager,
             skill_name="test_skill",
         )
-        
+
         assert tool.name == "test_skill"
         assert tool.description == "A test skill"
         assert tool.sandbox_level == 3  # default
 
-    def test_tool_with_custom_sandbox_level(self):
+    def test_tool_with_custom_sandbox_level(self, tmp_path):
         """Test tool with custom sandbox level."""
-        mock_manager = MagicMock()
-        
+        (tmp_path / "test_skill").mkdir()
+        (tmp_path / "test_skill" / "SKILL.md").write_text("---\nname: test_skill\ndescription: A test skill\n---")
+        (tmp_path / "test_skill" / "scripts").mkdir()
+        (tmp_path / "test_skill" / "scripts" / "main.py").write_text("print('ok')")
+        manager = SkillManager(skills_dir=str(tmp_path))
+
         tool = SkillLiteTool(
             name="test_skill",
             description="A test skill",
-            manager=mock_manager,
+            manager=manager,
             skill_name="test_skill",
             sandbox_level=1,
         )
-        
+
         assert tool.sandbox_level == 1
 
-    @patch('skilllite.sandbox.execution_service.UnifiedExecutionService.get_instance')
-    def test_run_success(self, mock_get_instance):
-        """Test successful skill execution via UnifiedExecutionService."""
-        # Setup mock execution service
-        mock_service = MagicMock()
-        mock_service.execute_skill.return_value = MockExecutionResult(
-            success=True,
-            output="Hello, World!"
-        )
-        mock_get_instance.return_value = mock_service
+    @pytest.mark.skipif(__import__("importlib").util.find_spec("skilllite") is None, reason="skilllite not installed")
+    @patch("skilllite.run_skill")
+    def test_run_success(self, mock_run_skill, tmp_path):
+        """Test successful skill execution via run_skill."""
+        mock_run_skill.return_value = {
+            "success": True,
+            "stdout": "Hello, World!",
+            "stderr": "",
+            "exit_code": 0,
+        }
 
-        # Setup mock manager with skill registry
-        mock_manager = MagicMock()
-        mock_skill_info = MagicMock()
-        mock_manager._registry.get_skill.return_value = mock_skill_info
+        (tmp_path / "test_skill").mkdir()
+        (tmp_path / "test_skill" / "SKILL.md").write_text("---\nname: test_skill\ndescription: A test skill\n---")
+        (tmp_path / "test_skill" / "scripts").mkdir()
+        (tmp_path / "test_skill" / "scripts" / "main.py").write_text("print('ok')")
+        manager = SkillManager(skills_dir=str(tmp_path))
 
         tool = SkillLiteTool(
             name="test_skill",
             description="A test skill",
-            manager=mock_manager,
+            manager=manager,
             skill_name="test_skill",
-            sandbox_level=1,  # No security scan
+            sandbox_level=1,
         )
 
         result = tool._run(param1="value1")
 
         assert result == "Hello, World!"
-        mock_service.execute_skill.assert_called_once()
+        mock_run_skill.assert_called_once()
 
-    @patch('skilllite.sandbox.execution_service.UnifiedExecutionService.get_instance')
-    def test_run_failure(self, mock_get_instance):
-        """Test failed skill execution via UnifiedExecutionService."""
-        # Setup mock execution service
-        mock_service = MagicMock()
-        mock_service.execute_skill.return_value = MockExecutionResult(
-            success=False,
-            error="Skill not found"
-        )
-        mock_get_instance.return_value = mock_service
+    @pytest.mark.skipif(__import__("importlib").util.find_spec("skilllite") is None, reason="skilllite not installed")
+    @patch("skilllite.run_skill")
+    def test_run_failure(self, mock_run_skill, tmp_path):
+        """Test failed skill execution."""
+        mock_run_skill.return_value = {
+            "success": False,
+            "stderr": "Skill not found",
+            "exit_code": 1,
+        }
 
-        # Setup mock manager with skill registry
-        mock_manager = MagicMock()
-        mock_skill_info = MagicMock()
-        mock_manager._registry.get_skill.return_value = mock_skill_info
+        (tmp_path / "test_skill").mkdir()
+        (tmp_path / "test_skill" / "SKILL.md").write_text("---\nname: test_skill\ndescription: A test skill\n---")
+        (tmp_path / "test_skill" / "scripts").mkdir()
+        (tmp_path / "test_skill" / "scripts" / "main.py").write_text("print('ok')")
+        manager = SkillManager(skills_dir=str(tmp_path))
 
         tool = SkillLiteTool(
             name="test_skill",
             description="A test skill",
-            manager=mock_manager,
+            manager=manager,
             skill_name="test_skill",
             sandbox_level=1,
         )
@@ -172,52 +161,59 @@ class TestSkillLiteTool:
 class TestSkillLiteToolkit:
     """Tests for SkillLiteToolkit class."""
 
-    def test_from_manager_creates_tools(self):
+    def test_from_manager_creates_tools(self, tmp_path):
         """Test that from_manager creates tools for each skill."""
-        mock_manager = MagicMock()
-        mock_manager.list_executable_skills.return_value = [
-            MockSkillInfo(name="skill1", description="First skill"),
-            MockSkillInfo(name="skill2", description="Second skill"),
-        ]
-        
-        tools = SkillLiteToolkit.from_manager(mock_manager)
-        
-        assert len(tools) == 2
-        assert tools[0].name == "skill1"
-        assert tools[1].name == "skill2"
+        for name in ("skill1", "skill2"):
+            d = tmp_path / name
+            d.mkdir()
+            (d / "SKILL.md").write_text(f"---\nname: {name}\ndescription: {name} skill\n---")
+            (d / "scripts").mkdir()
+            (d / "scripts" / "main.py").write_text("print('ok')")
+        manager = SkillManager(skills_dir=str(tmp_path))
 
-    def test_from_manager_filters_by_name(self):
+        tools = SkillLiteToolkit.from_manager(manager)
+        tools_sorted = sorted(tools, key=lambda t: t.name)
+
+        assert len(tools) == 2
+        assert tools_sorted[0].name == "skill1"
+        assert tools_sorted[1].name == "skill2"
+
+    def test_from_manager_filters_by_name(self, tmp_path):
         """Test that from_manager filters skills by name."""
-        mock_manager = MagicMock()
-        mock_manager.list_executable_skills.return_value = [
-            MockSkillInfo(name="skill1", description="First skill"),
-            MockSkillInfo(name="skill2", description="Second skill"),
-            MockSkillInfo(name="skill3", description="Third skill"),
-        ]
-        
-        tools = SkillLiteToolkit.from_manager(
-            mock_manager,
-            skill_names=["skill1", "skill3"]
-        )
-        
-        assert len(tools) == 2
-        assert tools[0].name == "skill1"
-        assert tools[1].name == "skill3"
+        for name in ("skill1", "skill2", "skill3"):
+            d = tmp_path / name
+            d.mkdir()
+            (d / "SKILL.md").write_text(f"---\nname: {name}\ndescription: {name} skill\n---")
+            (d / "scripts").mkdir()
+            (d / "scripts" / "main.py").write_text("print('ok')")
+        manager = SkillManager(skills_dir=str(tmp_path))
 
-    def test_from_manager_passes_options(self):
-        """Test that from_manager passes options to tools."""
-        mock_manager = MagicMock()
-        mock_manager.list_executable_skills.return_value = [
-            MockSkillInfo(name="skill1", description="First skill"),
-        ]
-        
         tools = SkillLiteToolkit.from_manager(
-            mock_manager,
+            manager,
+            skill_names=["skill1", "skill3"],
+        )
+        tools_sorted = sorted(tools, key=lambda t: t.name)
+
+        assert len(tools) == 2
+        assert tools_sorted[0].name == "skill1"
+        assert tools_sorted[1].name == "skill3"
+
+    def test_from_manager_passes_options(self, tmp_path):
+        """Test that from_manager passes options to tools."""
+        d = tmp_path / "skill1"
+        d.mkdir()
+        (d / "SKILL.md").write_text("---\nname: skill1\ndescription: First skill\n---")
+        (d / "scripts").mkdir()
+        (d / "scripts" / "main.py").write_text("print('ok')")
+        manager = SkillManager(skills_dir=str(tmp_path))
+
+        tools = SkillLiteToolkit.from_manager(
+            manager,
             allow_network=True,
             timeout=60,
             sandbox_level=2,
         )
-        
+
         assert len(tools) == 1
         assert tools[0].allow_network is True
         assert tools[0].timeout == 60

@@ -6,6 +6,8 @@
 
 LangChain integration for [SkillLite](https://github.com/EXboys/skilllite) - a lightweight sandboxed Python skill execution engine.
 
+> **Note:** langchain-skilllite 0.1.7+ requires [skilllite 0.1.8+](https://github.com/EXboys/skilllite) which provides `run_skill`, `scan_code`, and `execute_code` APIs.
+
 ## Table of Contents
 
 - [Features](#features)
@@ -55,7 +57,7 @@ pip install langchain-skilllite
 
 This will also install the required dependencies:
 - `langchain-core>=0.3.0`
-- `skilllite>=0.1.1`
+- `skilllite>=0.1.8`
 
 ### Optional Dependencies
 
@@ -99,6 +101,7 @@ result = agent.invoke({
 langchain-skilllite/
 ├── langchain_skilllite/        # Main package
 │   ├── __init__.py             # Package exports
+│   ├── core.py                 # SkillManager, SkillInfo, SecurityScanResult
 │   ├── tools.py                # SkillLiteTool & SkillLiteToolkit
 │   ├── callbacks.py            # SkillLiteCallbackHandler
 │   └── _version.py             # Version info
@@ -316,7 +319,6 @@ def confirm_execution(report: str, scan_id: str) -> bool:
 tools = SkillLiteToolkit.from_directory(
     skills_dir,
     sandbox_level=3,  # Enable security scanning
-    force_confirmation=True,  # Always ask for confirmation
     confirmation_callback=confirm_execution,
 )
 
@@ -335,7 +337,7 @@ python examples/03_security_scan.py
 
 **Execution Result:**
 
-![Security Scan Demo](images/03_secirity_scan.png)
+![Security Scan Demo](images/03_security_scan.png)
 
 ---
 
@@ -348,7 +350,7 @@ Execute skills directly without an LLM agent.
 Direct skill execution without LLM.
 """
 from pathlib import Path
-from skilllite import SkillManager
+from langchain_skilllite import SkillManager
 
 skills_dir = Path(".skills")
 
@@ -358,11 +360,11 @@ manager = SkillManager(skills_dir=str(skills_dir))
 # List skills
 print("Available skills:")
 for skill in manager.list_skills():
-    print(f"  - {skill.name}: {skill.description[:50]}...")
+    print(f"  - {skill.name}: {(skill.description or '')[:50]}...")
 
 # Execute directly
 result = manager.execute("text-upper", {"text": "hello world"})
-print(f"\nResult: {result.output}")
+print(f"\nResult: {result['output']}")
 ```
 
 **Run the example:**
@@ -424,6 +426,24 @@ tools = SkillLiteToolkit.from_directory(
 
 ## API Reference
 
+### SkillManager
+
+Manage skills from a directory. Parse SKILL.md and execute skills.
+
+```python
+from langchain_skilllite import SkillManager
+
+manager = SkillManager(skills_dir="./skills")
+
+# List all skills
+for skill in manager.list_skills():
+    print(f"{skill.name}: {skill.description}")
+
+# Execute a skill
+result = manager.execute("text-upper", {"text": "hello"})
+# result: {"success": True, "output": "...", "exit_code": 0}
+```
+
 ### SkillLiteTool
 
 LangChain `BaseTool` adapter for a single SkillLite skill.
@@ -461,7 +481,7 @@ tools = SkillLiteToolkit.from_directory(
 )
 
 # From an existing SkillManager
-from skilllite import SkillManager
+from langchain_skilllite import SkillManager
 
 manager = SkillManager(skills_dir="./skills")
 tools = SkillLiteToolkit.from_manager(manager)
@@ -476,8 +496,7 @@ tools = SkillLiteToolkit.from_manager(manager)
 | `allow_network` | bool | False | Allow network access for skills |
 | `timeout` | int | None | Execution timeout in seconds |
 | `sandbox_level` | int | 3 | Sandbox security level (1/2/3) |
-| `force_confirmation` | bool | False | Always require confirmation |
-| `confirmation_callback` | Callable | None | Sync confirmation callback |
+| `confirmation_callback` | Callable | None | Sync callback for security confirmation (sandbox_level=3) |
 | `async_confirmation_callback` | Callable | None | Async confirmation callback |
 
 ### SkillLiteCallbackHandler
@@ -539,16 +558,16 @@ BASE_URL=https://api.openai.com/v1
 MODEL=gpt-4o-mini
 ```
 
-#### 3. Sandbox Binary Not Found
+#### 3. SkillLite Binary Not Found
 
 ```
-Error: skillbox binary not found
+Error: skilllite binary not found. Run: pip install skilllite
 ```
 
-**Solution:** Install the skilllite package with sandbox support:
+**Solution:** Install the skilllite package (includes the sandbox binary):
 
 ```bash
-pip install skilllite[sandbox]
+pip install skilllite
 ```
 
 #### 4. Security Scan Blocking Execution
@@ -603,7 +622,7 @@ tools = SkillLiteToolkit.from_directory(
 
 - Python >= 3.9
 - langchain-core >= 0.3.0
-- skilllite >= 0.1.1
+- skilllite >= 0.1.8
 - python-dotenv (for examples)
 - langchain-openai (for LLM integration)
 - langgraph (for agent examples)

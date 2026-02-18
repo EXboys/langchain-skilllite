@@ -12,8 +12,7 @@ from pathlib import Path
 # Skip all tests if skilllite is not installed
 pytest.importorskip("skilllite")
 
-from skilllite import SkillManager
-from langchain_skilllite import SkillLiteTool, SkillLiteToolkit
+from langchain_skilllite import SkillLiteTool, SkillLiteToolkit, SkillManager
 
 
 @pytest.fixture

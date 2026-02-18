@@ -2,7 +2,7 @@
 Direct skill execution without LLM.
 """
 from pathlib import Path
-from skilllite import SkillManager
+from langchain_skilllite import SkillManager
 
 skills_dir = Path(".skills")
 
@@ -12,9 +12,9 @@ manager = SkillManager(skills_dir=str(skills_dir))
 # List skills
 print("Available skills:")
 for skill in manager.list_skills():
-    print(f"  - {skill.name}: {skill.description[:50]}...")
+    print(f"  - {skill.name}: {(skill.description or '')[:50]}...")
 
 # Execute directly
 result = manager.execute("text-upper", {"text": "hello world"})
-print(f"\nResult: {result.output}")
+print(f"\nResult: {result['output']}")
 
