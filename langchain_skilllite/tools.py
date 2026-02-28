@@ -7,6 +7,7 @@ Uses skilllite's scan_code, run_skill APIs. No dependency on skilllite.core.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -19,6 +20,30 @@ from langchain_skilllite.core import (
     SkillInfo,
     SkillManager,
 )
+
+# ANSI escape code pattern (e.g. \x1b[2m, \x1b[0m)
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _clean_skill_output(raw: str) -> str:
+    """Strip ANSI codes and tracing logs, extract clean skill output (typically JSON)."""
+    if not raw or not raw.strip():
+        return raw
+    # Strip ANSI escape codes
+    cleaned = _ANSI_ESCAPE.sub("", raw)
+    # Split by newlines; skill output is usually the last JSON line
+    lines = [ln.strip() for ln in cleaned.splitlines() if ln.strip()]
+    for line in reversed(lines):
+        # Skip tracing/log lines (timestamp, INFO, WARN, etc.)
+        if re.match(r"^\d{4}-\d{2}-\d{2}T.*\s+(INFO|WARN|DEBUG|ERROR)\s+", line):
+            continue
+        if line.startswith("[") or line.startswith("{"):
+            try:
+                json.loads(line)
+                return line
+            except json.JSONDecodeError:
+                pass
+    return cleaned.strip()
 
 
 def _run_skill_with_scan(
@@ -66,7 +91,8 @@ def _run_skill_with_scan(
         auto_approve=auto_approve,
     )
     if result.get("success"):
-        return result.get("stdout", result.get("text", ""))
+        raw = result.get("stdout", result.get("text", ""))
+        return _clean_skill_output(raw)
     return f"Error: {result.get('stderr', result.get('text', 'Execution failed'))}"
 
 
